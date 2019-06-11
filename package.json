@@ -1,0 +1,23 @@
+{
+  "name": "battlepet-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+		"compile": "tsc -p ./",
+		"watch": "tsc -watch -p ./",
+    "test": "npm run compile"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/koa": "^2.0.48",
+    "@types/koa-router": "^7.0.40",
+    "tslint": "^5.17.0",
+    "typescript": "^3.5.1"
+  },
+  "dependencies": {
+    "koa": "^2.7.0",
+    "koa-router": "^7.4.0"
+  }
+}
