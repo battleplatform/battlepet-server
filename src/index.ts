@@ -7,10 +7,17 @@
 
 import * as Koa from 'koa';
 import { routers, methods } from './routes';
+import { db } from './db';
 
-const app = new Koa();
+async function main() {
+    await db.init();
+    await db.test();
 
-app.use(routers)
-    .use(methods)
-    .listen(9527);
+    const app = new Koa();
 
+    app.use(routers)
+        .use(methods)
+        .listen(9527);
+}
+
+main();

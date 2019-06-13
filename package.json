@@ -4,8 +4,8 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-		"compile": "tsc -p ./",
-		"watch": "tsc -watch -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
     "test": "npm run compile"
   },
   "author": "",
@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "koa": "^2.7.0",
-    "koa-router": "^7.4.0"
+    "koa-router": "^7.4.0",
+    "mysql": "^2.17.1",
+    "typeorm": "^0.2.18"
   }
 }
