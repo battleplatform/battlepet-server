@@ -11,7 +11,6 @@ import { db } from './db';
 
 async function main() {
     await db.init();
-    await db.test();
 
     const app = new Koa();
 

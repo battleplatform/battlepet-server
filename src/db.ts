@@ -36,12 +36,6 @@ class DataBase {
         this.pets = new Map(PET_LIST.map(pet => [pet.petId, pet]));
     }
 
-    async test() {
-        for (let i = 1; i <= 100; ++i) {
-            await this.getUser(i);
-        }
-    }
-
     async getUser(userId: number) {
         let [user] = await this.conn.getRepository(User).find({ where: { userId }, relations: ['pets', 'team'] });
         if (!user) {
