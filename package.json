@@ -6,7 +6,8 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile"
+    "test": "npm run compile",
+    "start": "pm2 start dist/index.js"
   },
   "author": "",
   "license": "MIT",
