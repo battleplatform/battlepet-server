@@ -93,6 +93,32 @@ router
             gold: user.gold
         };
     })
+    .get('/pet_lottery', async ctx => {
+        const price = 150;
+        const user = ctx.state.user;
+        ctx.state.verify(user.gold >= price, 500, 'Gold not enough');
+
+        const pets = db.getPets().filter(item => !user.hasPet(item.petId));
+        ctx.state.verify(pets.length > 0, 500, 'All have');
+
+        const pet = pets[utils.random(0, pets.length - 1)];
+
+        const userPet = new UserPet();
+        userPet.user = user;
+        userPet.petId = pet.petId;
+
+        user.pets.push(userPet);
+        user.gold -= price;
+
+        await db.save(user);
+        await db.save(userPet);
+
+        ctx.state.body = {
+            pets: user.pets.map(item => item.petId),
+            gold: user.gold,
+            petId: pet.petId
+        };
+    })
     .get('/gold', ctx => {
         ctx.state.body = {
             gold: ctx.state.user.gold
@@ -114,7 +140,7 @@ router
             .map(petId => db.getPet(petId))
             .filter(pet => pet);
 
-        ctx.state.verify(pets.length === 3, 500, 'Argument error');
+        // ctx.state.verify(pets.length === 3, 500, 'Argument error');
 
         for (const pet of pets) {
             ctx.state.verify(user.hasPet(pet.petId), 500, 'Pet not exists');

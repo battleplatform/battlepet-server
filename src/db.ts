@@ -104,6 +104,10 @@ class DataBase {
     getPet(petId: number) {
         return this.pets.get(petId) as Pet;
     }
+
+    getPets() {
+        return [...this.pets.values()];
+    }
 }
 
 export const db = new DataBase();
