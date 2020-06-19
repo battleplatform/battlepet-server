@@ -5,12 +5,17 @@
  * @Date   : 6/11/2019, 3:47:02 PM
  */
 
+import * as Base64 from 'crypto-js/enc-base64';
+import * as koaBody from 'koa-body';
 import * as Router from 'koa-router';
-import * as utils from './utils';
+import * as RSA from 'node-rsa';
 
+import { BattleMelee } from './battle';
 import { db } from './db';
 import { User, UserPet } from './entity';
-import { BattleMelee } from './battle';
+import * as utils from './utils';
+
+import C = require('crypto-js');
 
 const MINUTE = 1;
 const WAGE_PRE_MINUTE = 1;
@@ -19,10 +24,31 @@ const WAGE_MAX = 500;
 interface State {
     user: User;
     body?: any;
+    reqBody?: any;
     verify(val: any, error: number, message: string): void;
 }
 
 const router = new Router<State>();
+
+// 测试KEY，请替换成实际使用的
+const key = new RSA(
+    '-----BEGIN PRIVATE KEY-----' +
+    'MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAOFLM8+cWfjWJrP6' +
+    '3i0jiRtpc240U6wjyEV4Ji2XA8UpFsRMdsFLXRsy9Rs5YsW1GBlXcv3bgZD2itui' +
+    'YSYnWdbJpI7yIFtkDKJZQ/k8kmH9v2QePUwzAbvXZsZ9hg92ORGms2nNT3DhQHNQ' +
+    'wopSgdThz8Ztvhd4Er0s1M9ZAvhjAgMBAAECgYEAxwNLTUXsJGfn4Gzm/jC52MEZ' +
+    '+mu2zgT90IAGGZeg+PUG63gwHyeXo4MsCVRz7/m8xAX/ykew+IEQwFt8Pdvc+rrs' +
+    '5yml4gOBPfhpau5QaI75xNjnyH7UA3mbRCZeyZrvuKqtY/f8pCgzy3EBWnRpkcsq' +
+    'eE6bsOQrD45mltr+0QECQQDynvhKEh+hD5xBpF/DIP8Fp6fizexHdA6+aZT/gLaF' +
+    'A4XgZ9HEDDBhvNdadyYUNOLWhkxRHv6CkT5azfLXsJEhAkEA7begtbBCDXDf1+DR' +
+    'h3j2S8zcv6+utYgcpjvxZqjbPi6UIWXLxI80PIwQ0uouHCUMjikBA6VX9vTbw9TZ' +
+    '/IelAwJBAKI3W7baiz86mrTg3A4w/5GeWQexuurDVCBHo5F5U493nYk+oOe9ZpPS' +
+    'mQIpa9JS0d+xB1GtsWlHBzPbQySnL0ECQA/btCjqvT1QTl6EbPXwp92eqQtQmQMb' +
+    'NW4RiaUjlpyrVs5zkAho1T9EyMqJPNI71n6VVa/8k8WxyAdkZ7ZlBikCQEkNe1+s' +
+    'AKnh+AFGCJ+6WAq1J2RuIgcA6bVL3ip7F2NHdE+N+tR9JqWw3JNCweWmAlzKIGs6' +
+    'eKSVD5egzKaLXss=' +
+    '-----END PRIVATE KEY-----'
+);
 
 function calcWage(last: number) {
     const gold = Math.floor(((utils.now() - last) / MINUTE) * WAGE_PRE_MINUTE);
@@ -30,22 +56,37 @@ function calcWage(last: number) {
 }
 
 router
+    .use(koaBody())
     .use(async (ctx, next) => {
-        ctx.state.verify = (val: any, error: number, message: string) => {
-            if (!val) {
-                throw {
-                    error,
-                    message
-                };
-            }
-        };
-
         try {
-            const userId = Number.parseInt(ctx.get('user'));
-            ctx.state.verify(userId, 401, 'Access denied');
+            ctx.state.verify = (val: any, error: number, message: string) => {
+                if (!val) {
+                    throw {
+                        error,
+                        message
+                    };
+                }
+            };
 
-            ctx.state.user = await db.getUser(userId);
-            ctx.state.verify(ctx.state.user, 401, 'Access denied');
+            if (ctx.request.body && ctx.get('Access-Token')) {
+                const token = ctx.get('Access-Token');
+                if (!token) {
+                    ctx.state.verify(0, 401, 'No Access-Token');
+                }
+                const data = Base64.parse(key.decrypt(token, 'base64')).toString(C.enc.Utf8);
+                const keyPair = data.split('\n');
+                const aesKey = Base64.parse(keyPair[0]);
+                const iv = Base64.parse(keyPair[1]);
+
+                const body = C.AES.decrypt(ctx.request.body, aesKey, {
+                    iv,
+                    mode: C.mode.CBC,
+                    padding: C.pad.Pkcs7,
+                    encoding: 'base64'
+                }).toString(C.enc.Utf8);
+
+                ctx.state.reqBody = body;
+            }
 
             await next();
 
@@ -62,12 +103,21 @@ router
             }
         }
     })
-    .get('/pets', ctx => {
+    .use(async (ctx, next) => {
+        const userId = Number.parseInt(ctx.get('user'));
+        ctx.state.verify(userId, 401, 'Access denied');
+
+        ctx.state.user = await db.getUser(userId);
+        ctx.state.verify(ctx.state.user, 401, 'Access denied');
+
+        await next();
+    })
+    .get('/pets', (ctx) => {
         ctx.state.body = {
-            pets: ctx.state.user.pets.map(item => item.petId)
+            pets: ctx.state.user.pets.map((item) => item.petId)
         };
     })
-    .get('/pet_buy', async ctx => {
+    .get('/pet_buy', async (ctx) => {
         const petId = Number.parseInt(ctx.query.id);
         ctx.state.verify(petId, 500, 'Argument error');
 
@@ -89,16 +139,16 @@ router
         await db.save(userPet);
 
         ctx.state.body = {
-            pets: user.pets.map(item => item.petId),
+            pets: user.pets.map((item) => item.petId),
             gold: user.gold
         };
     })
-    .get('/pet_lottery', async ctx => {
+    .get('/pet_lottery', async (ctx) => {
         const price = 150;
         const user = ctx.state.user;
         ctx.state.verify(user.gold >= price, 500, 'Gold not enough');
 
-        const pets = db.getPets().filter(item => !user.hasPet(item.petId));
+        const pets = db.getPets().filter((item) => !user.hasPet(item.petId));
         ctx.state.verify(pets.length > 0, 500, 'All have');
 
         const pet = pets[utils.random(0, pets.length - 1)];
@@ -114,31 +164,31 @@ router
         await db.save(userPet);
 
         ctx.state.body = {
-            pets: user.pets.map(item => item.petId),
+            pets: user.pets.map((item) => item.petId),
             gold: user.gold,
             petId: pet.petId
         };
     })
-    .get('/gold', ctx => {
+    .get('/gold', (ctx) => {
         ctx.state.body = {
             gold: ctx.state.user.gold
         };
     })
-    .get('/team', ctx => {
+    .get('/team', (ctx) => {
         ctx.state.body = {
-            team: ctx.state.user.team.map(item => item.petId)
+            team: ctx.state.user.team.map((item) => item.petId)
         };
     })
-    .get('/set_team', async ctx => {
+    .get('/set_team', async (ctx) => {
         const user = ctx.state.user;
 
         ctx.state.verify(ctx.query.team, 500, 'Argument error');
 
         const pets = (ctx.query.team as string)
             .split(',')
-            .map(item => Number.parseInt(item))
-            .map(petId => db.getPet(petId))
-            .filter(pet => pet);
+            .map((item) => Number.parseInt(item))
+            .map((petId) => db.getPet(petId))
+            .filter((pet) => pet);
 
         // ctx.state.verify(pets.length === 3, 500, 'Argument error');
 
@@ -149,17 +199,17 @@ router
         await db.setTeam(user, pets);
 
         ctx.state.body = {
-            team: user.team.map(item => item.petId)
+            team: user.team.map((item) => item.petId)
         };
     })
-    .get('/look_wage', ctx => {
+    .get('/look_wage', (ctx) => {
         const lastPickTime = ctx.state.user.lastPickTime;
         ctx.state.body = {
             lastPickTime,
             wage: calcWage(lastPickTime)
         };
     })
-    .get('/wage', async ctx => {
+    .get('/wage', async (ctx) => {
         const user = ctx.state.user;
         const wage = calcWage(user.lastPickTime);
         if (wage > 0) {
@@ -173,7 +223,7 @@ router
             wage: 0
         };
     })
-    .get('/battle', async ctx => {
+    .get('/battle', async (ctx) => {
         const user = await db.getRandomUser();
         if (!user) {
             return;
@@ -186,6 +236,21 @@ router
         ctx.state.body = {
             battle: battle.getReply(),
             opposing: {}
+        };
+    })
+    .post('/login', async (ctx) => {
+        console.log(ctx.state.reqBody);
+        console.log(ctx.request.get('Access-Token'));
+
+        ctx.state.body = {
+            success: true
+        };
+    })
+    .get('/search', async (ctx) => {
+        console.log(ctx.state.reqBody);
+        console.log(ctx.request.headers);
+        ctx.state.body = {
+            success: true
         };
     });
 
